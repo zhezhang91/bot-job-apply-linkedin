@@ -20,10 +20,31 @@ import os
 import csv
 import re
 import time
+import shutil
 import pyautogui
 
 # Set CSV field size limit to prevent field size errors
 csv.field_size_limit(1000000)  # Set to 1MB instead of default 131KB
+
+
+def _ensure_private_config() -> None:
+    '''Create personals.py / secrets.py from examples when missing (not stored in git).'''
+    for example, target in [
+        ("config/personals.example.py", "config/personals.py"),
+        ("config/secrets.example.py", "config/secrets.py"),
+    ]:
+        if os.path.exists(target):
+            continue
+        if os.path.exists(example):
+            shutil.copy(example, target)
+            print(f"Created {target} from example — please edit it with your details.")
+        else:
+            raise FileNotFoundError(
+                f"Missing {target}. Copy config/{os.path.basename(example)} to {target} and fill in your details."
+            )
+
+
+_ensure_private_config()
 
 from random import choice, shuffle, randint
 from datetime import datetime
