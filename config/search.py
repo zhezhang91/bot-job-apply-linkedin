@@ -107,9 +107,9 @@ easy_apply_only = False            # False = also include jobs that apply on com
 # External apply: fill company-site forms; leave the tab open for you to submit manually.
 apply_external_jobs = True         # True or False, Note: True or False are case-sensitive
 fill_external_application_forms = True   # Auto-fill fields on external sites
-external_auto_submit = False       # False = never click Submit; you finish and submit in the open tab
+external_auto_submit = True        # True = click Submit when required fields are filled
 keep_external_apply_tabs_open = True     # Always leave external apply tabs open (recommended)
-external_apply_max_steps = 20      # Max Next/Continue clicks per external application (Submit excluded when external_auto_submit = False)
+external_apply_max_steps = 5       # Max Next/Continue clicks per external job; then skip and move on
 
 experience_level = ["Entry level", "Associate", "Mid-Senior level"]
 job_type = ["Full-time"]                      # (multiple select) "Full-time", "Part-time", "Contract", "Temporary", "Volunteer", "Internship", "Other"

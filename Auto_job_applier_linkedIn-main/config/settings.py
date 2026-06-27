@@ -62,13 +62,7 @@ generated_resume_path = "all resumes/" # (In Development)
 # Directory and name of the files where history of applied jobs is saved (Sentence after the last "/" will be considered as the file name).
 file_name = "all excels/all_applied_applications_history.csv"
 failed_file_name = "all excels/all_failed_applications_history.csv"
-saved_jobs_file_name = "all excels/all_saved_jobs_history.csv"
-external_incomplete_file_name = "all excels/external_apply_incomplete_history.csv"
 logs_folder_path = "logs/"
-
-# If True, only bookmark new jobs (no Easy Apply). Set False for normal daily use:
-# Step 1 apply Saved jobs, Step 2 search and apply to new jobs.
-save_jobs_only = False              # True or False, Note: True or False are case-sensitive
 
 # Set the maximum amount of time allowed to wait between each click in secs
 click_gap = 1                       # Enter max allowed secs to wait approximately. (Only Non Negative Integers Eg: 0,1,2,3,....)
