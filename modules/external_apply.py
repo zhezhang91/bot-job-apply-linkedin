@@ -84,7 +84,10 @@ LANDING_APPLY_XPATHS = [
     "a.apply-button",
     ".btn-apply",
     "[class*='apply-button']",
-    "[class*='ApplyButton']",
+    ".//button[normalize-space(.)='Apply Now']",
+    ".//a[normalize-space(.)='Apply Now']",
+    "#grnhse_app .postings-btn",
+    "iframe#grnhse_iframe",
 ]
 
 NEXT_BUTTON_XPATHS = [
@@ -1088,65 +1091,127 @@ def _form_state_fingerprint(driver: WebDriver) -> str:
         return _page_fingerprint(driver)
 
 
-def _has_visible_form_fields(driver: WebDriver) -> bool:
+def _count_form_fields(driver: WebDriver) -> int:
     try:
         return len(driver.find_elements(
             By.CSS_SELECTOR,
             "input:not([type='hidden']), select, textarea, [role='combobox'], input[type='file']",
-        )) > 0
+        ))
     except Exception:
-        return False
+        return 0
 
 
-def _switch_to_application_frame(driver: WebDriver, quiet: bool = False) -> bool:
+def _has_visible_form_fields(driver: WebDriver) -> bool:
+    return _count_form_fields(driver) > 0
+
+
+def _iframe_priority(iframe) -> int:
+    src = (iframe.get_attribute('src') or '').lower()
+    iid = (iframe.get_attribute('id') or '').lower()
+    name = (iframe.get_attribute('name') or '').lower()
+    blob = f'{src} {iid} {name}'
+    if 'boards.greenhouse.io' in blob or 'grnhse_iframe' in blob or iid == 'grnhse_iframe':
+        return 100
+    if 'greenhouse.io' in blob or 'grnhse' in blob:
+        return 80
+    if 'greenhouse' in blob or 'job-board' in blob or 'application' in blob:
+        return 60
+    if 'apply' in blob:
+        return 40
+    return 0
+
+
+def _scroll_to_greenhouse_embed(driver: WebDriver) -> None:
+    for selector in (
+        '#grnhse_iframe', '#grnhse_app', '#application', '[id*="grnhse"]',
+        'iframe[src*="greenhouse"]', 'iframe[src*="grnhse"]',
+    ):
+        try:
+            el = driver.find_element(By.CSS_SELECTOR, selector)
+            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", el)
+            buffer(1)
+            return
+        except Exception:
+            continue
+
+
+def _activate_application_context(driver: WebDriver, quiet: bool = False) -> bool:
+    '''
+    Find where the Greenhouse form actually lives — main page or best iframe.
+    Pinterest and similar sites embed GH inline; wrong iframe = empty context.
+    '''
+    best_count = 0
+    best_iframe = None
+
     try:
         driver.switch_to.default_content()
     except Exception:
         pass
-    frame_tokens = (
-        'greenhouse', 'grnhse', 'apply', 'job-board', 'gem.com', 'workday', 'application',
-        'phenom', 'eightfold', 'icims', 'taleo', 'mongodb', 'careers', 'brassring',
-        'careerpuck',
+
+    _handle_application_start_modal(driver)
+    main_count = _count_form_fields(driver)
+    if main_count > best_count:
+        best_count = main_count
+        best_iframe = None
+
+    iframes = sorted(
+        driver.find_elements(By.TAG_NAME, 'iframe'),
+        key=_iframe_priority,
+        reverse=True,
     )
-
-    def _try_frame(iframe) -> bool:
-        try:
-            src = (iframe.get_attribute('src') or '').lower()
-            title = (iframe.get_attribute('title') or '').lower()
-            name = (iframe.get_attribute('name') or '').lower()
-            blob = f'{src} {title} {name}'
-            if not any(token in blob for token in frame_tokens):
-                return False
-            driver.switch_to.frame(iframe)
-            buffer(1)
-            if not quiet:
-                print_lg('Switched to embedded application iframe.')
-            return True
-        except Exception:
-            return False
-
-    for iframe in driver.find_elements(By.TAG_NAME, 'iframe'):
-        if _try_frame(iframe):
-            return True
-
-    for outer in driver.find_elements(By.TAG_NAME, 'iframe'):
+    for iframe in iframes:
+        if _iframe_priority(iframe) <= 0:
+            continue
         try:
             driver.switch_to.default_content()
-            driver.switch_to.frame(outer)
-            for inner in driver.find_elements(By.TAG_NAME, 'iframe'):
-                if _try_frame(inner):
-                    return True
-            if _has_visible_form_fields(driver):
-                if not quiet:
-                    print_lg('Using outer iframe with form fields.')
-                return True
+            driver.switch_to.frame(iframe)
+            _handle_application_start_modal(driver)
+            count = _count_form_fields(driver)
+            if count > best_count:
+                best_count = count
+                best_iframe = iframe
         except Exception:
-            pass
+            continue
+
     try:
         driver.switch_to.default_content()
+        if best_iframe is not None:
+            driver.switch_to.frame(best_iframe)
+            if not quiet:
+                src = (best_iframe.get_attribute('src') or '')[:80]
+                print_lg(f'Switched to Greenhouse application iframe ({src}).')
+        elif not quiet and best_count > 0:
+            print_lg('Using Greenhouse application form on main page.')
+    except Exception:
+        pass
+
+    if best_count > 0:
+        return True
+
+    # Modal may be open but fields not loaded yet — stay in best GH iframe
+    try:
+        driver.switch_to.default_content()
+        for iframe in iframes:
+            if _iframe_priority(iframe) >= 60:
+                driver.switch_to.frame(iframe)
+                if _handle_application_start_modal(driver):
+                    buffer(2)
+                    if _count_form_fields(driver) > 0:
+                        if not quiet:
+                            print_lg('Switched to Greenhouse iframe after Apply Manually modal.')
+                        return True
+                break
+        driver.switch_to.default_content()
+        if _handle_application_start_modal(driver):
+            buffer(2)
+            return _has_visible_form_fields(driver)
     except Exception:
         pass
     return False
+
+
+def _switch_to_application_frame(driver: WebDriver, quiet: bool = False) -> bool:
+    return _activate_application_context(driver, quiet=quiet)
 
 
 def _start_application_in_frame(driver: WebDriver) -> bool:
@@ -1168,18 +1233,7 @@ def _focus_application_context(driver: WebDriver) -> bool:
     '''Re-enter the application iframe without re-clicking Apply on the landing page.'''
     if _has_visible_form_fields(driver):
         return True
-    try:
-        driver.switch_to.default_content()
-    except Exception:
-        pass
-    if _switch_to_application_frame(driver, quiet=True):
-        if _handle_application_start_modal(driver):
-            buffer(1)
-        if _has_visible_form_fields(driver):
-            return True
-    if _handle_application_start_modal(driver):
-        buffer(1)
-    return _has_visible_form_fields(driver)
+    return _activate_application_context(driver, quiet=True) or _has_visible_form_fields(driver)
 
 
 def _ensure_application_form_open(driver: WebDriver) -> bool:
@@ -1197,27 +1251,29 @@ def _ensure_application_form_open(driver: WebDriver) -> bool:
         print_lg(f'ATS platform detected: {platform}')
 
     _start_application_on_landing_page(driver)
-    buffer(2)
+    _scroll_to_greenhouse_embed(driver)
+    buffer(3)
 
-    if _switch_to_application_frame(driver):
+    if _activate_application_context(driver):
+        buffer(1)
+    elif _switch_to_application_frame(driver):
         _start_application_in_frame(driver)
         _handle_application_start_modal(driver)
         buffer(1)
 
-    if _wait_for_form_fields(driver, 10):
+    if _wait_for_form_fields(driver, 12):
         _session_form_opened = True
         return True
 
-    # One retry: iframe may load slowly (CareerPuck / Greenhouse embed)
     try:
         driver.switch_to.default_content()
     except Exception:
         pass
     buffer(2)
-    if _switch_to_application_frame(driver, quiet=True):
-        _start_application_in_frame(driver)
-        _handle_application_start_modal(driver)
-    if _wait_for_form_fields(driver, 8):
+    _scroll_to_greenhouse_embed(driver)
+    if _activate_application_context(driver, quiet=True):
+        buffer(1)
+    if _wait_for_form_fields(driver, 10):
         _session_form_opened = True
         return True
 
@@ -1252,6 +1308,8 @@ def _detect_ats_platform(driver: WebDriver) -> str:
             return 'Ashby'
         if 'careerpuck.com' in url:
             return 'Greenhouse/CareerPuck'
+        if 'pinterestcareers.com' in url:
+            return 'Greenhouse/Pinterest'
         if 'phenom' in url or 'eightfold' in url:
             return 'Phenom/Eightfold'
     except Exception:
