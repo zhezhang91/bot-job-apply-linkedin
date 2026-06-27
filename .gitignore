@@ -8,7 +8,5 @@ logs
 
 old
 
-secrets.py
-config/secrets.py
 .venv
 apikeys.py

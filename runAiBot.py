@@ -66,6 +66,7 @@ from modules.open_chrome import *
 from modules.helpers import *
 from modules.clickers_and_finders import *
 from modules.validator import validate_config
+from modules.external_apply import fill_and_submit_external_form
 
 if use_AI:
     from modules.ai.openaiConnections import ai_create_openai_client, ai_extract_skills, ai_answer_question, ai_close_openai_client
@@ -643,8 +644,11 @@ def should_skip_for_location(work_location: str, work_style: str) -> tuple[bool,
         return False, ""
     if any(loc.lower() in location_text for loc in allowed):
         return False, ""
-    if allow_remote_canada and 'canada' in location_text and not any(loc.lower() in location_text for loc in blocked_locations):
-        if 'remote' in location_text or 'remote' in work_style.lower() or 'hybrid' in work_style.lower():
+    if allow_remote_canada and re.search(r',\s*(on|bc|ab|mb|sk|ns|nb|nl|pe|nt|nu|yt)\b', location_text):
+        if not blocked_locations or not any(loc.lower() in location_text for loc in blocked_locations):
+            return False, ""
+    if allow_remote_canada and 'canada' in location_text:
+        if not blocked_locations or not any(loc.lower() in location_text for loc in blocked_locations):
             return False, ""
     if 'remote' in location_text or 'remote' in work_style.lower():
         return False, ""
@@ -784,7 +788,11 @@ def get_job_description(
                 skipReason = "Found a Bad Word in About Job"
                 skip = True
                 break
-        if not skip and security_clearance == False and ('polygraph' in jobDescriptionLow or 'clearance' in jobDescriptionLow or 'secret' in jobDescriptionLow):
+        if not skip and security_clearance == False and (
+            'polygraph' in jobDescriptionLow
+            or 'security clearance' in jobDescriptionLow
+            or 'clearance required' in jobDescriptionLow
+        ):
             skipMessage = f'\n{jobDescription}\n\nFound "Clearance" or "Polygraph". Skipping this job!\n'
             skipReason = "Asking for Security clearance"
             skip = True
@@ -1166,32 +1174,73 @@ def answer_questions(modal: WebElement, questions_list: set, work_location: str,
 
 
 
-def external_apply(pagination_element: WebElement, job_id: str, job_link: str, resume: str, date_listed, application_link: str, screenshot_name: str) -> tuple[bool, str, int]:
+def external_apply(pagination_element: WebElement, job_id: str, job_link: str, resume: str, date_listed, application_link: str, screenshot_name: str, work_location: str = "", job_description: str | None = None) -> tuple[bool, str, int]:
     '''
-    Function to open new tab and save external job application links
+    Opens external Apply (company website), fills the form when possible, and submits.
     '''
-    global tabs_count, dailyEasyApplyLimitReached
-    if easy_apply_only:
-        try:
-            if "exceeded the daily application limit" in driver.find_element(By.CLASS_NAME, "artdeco-inline-feedback__message").text: dailyEasyApplyLimitReached = True
-        except: pass
-        print_lg("Easy apply failed I guess!")
-        if pagination_element != None: return True, application_link, tabs_count
+    global tabs_count, dailyEasyApplyLimitReached, linkedIn_tab
+    apply_selectors = [
+        ".//button[contains(@class,'jobs-apply-button') and contains(@class, 'artdeco-button--3')]",
+        ".//button[contains(@class,'jobs-apply-button')]",
+        ".//a[contains(@class,'jobs-apply-button')]",
+        ".//button[contains(@aria-label,'Apply')]",
+    ]
     try:
-        wait.until(EC.element_to_be_clickable((By.XPATH, ".//button[contains(@class,'jobs-apply-button') and contains(@class, 'artdeco-button--3')]"))).click() # './/button[contains(span, "Apply") and not(span[contains(@class, "disabled")])]'
-        wait_span_click(driver, "Continue", 1, True, False)
+        apply_clicked = False
+        tabs_before = len(driver.window_handles)
+        for selector in apply_selectors:
+            try:
+                btn = WebDriverWait(driver, 4).until(EC.element_to_be_clickable((By.XPATH, selector)))
+                scroll_to_view(driver, btn)
+                btn.click()
+                apply_clicked = True
+                buffer(click_gap)
+                break
+            except Exception:
+                continue
+        if not apply_clicked:
+            raise NoSuchElementException("Apply button not found")
+
+        try:
+            wait_span_click(driver, "Continue", 1, True, False)
+        except Exception:
+            pass
+
+        buffer(2)
         windows = driver.window_handles
         tabs_count = len(windows)
-        driver.switch_to.window(windows[-1])
-        application_link = driver.current_url
-        print_lg('Got the external application link "{}"'.format(application_link))
-        if close_tabs and driver.current_window_handle != linkedIn_tab: driver.close()
-        driver.switch_to.window(linkedIn_tab)
-        return False, application_link, tabs_count
+        if tabs_count > tabs_before:
+            driver.switch_to.window(windows[-1])
+            application_link = driver.current_url
+            print_lg(f'External apply page opened: "{application_link}"')
+
+            submitted, status = fill_and_submit_external_form(
+                driver,
+                work_location,
+                job_description,
+                default_resume_path,
+                actions,
+            )
+            if submitted:
+                application_link = status
+                print_lg(f'External application submitted for job {job_id}')
+            else:
+                print_lg(f'{status} — URL: {application_link}')
+
+            driver.switch_to.window(linkedIn_tab)
+            return False, application_link, tabs_count
+
+        # Apply stayed on LinkedIn — may be Easy Apply mis-detected or an in-page redirect.
+        try:
+            if "exceeded the daily application limit" in driver.find_element(By.CLASS_NAME, "artdeco-inline-feedback__message").text:
+                dailyEasyApplyLimitReached = True
+        except Exception:
+            pass
+        print_lg("Apply opened on LinkedIn but no external tab — skipping external collection.")
+        return True, application_link, tabs_count
     except Exception as e:
-        # print_lg(e)
-        print_lg("Failed to apply!")
-        failed_job(job_id, job_link, resume, date_listed, "Probably didn't find Apply button or unable to switch tabs.", e, application_link, screenshot_name)
+        print_lg(f"Failed to collect external apply link for job {job_id}!")
+        failed_job(job_id, job_link, resume, date_listed, "External apply failed", e, application_link, screenshot_name)
         global failed_count
         failed_count += 1
         return True, application_link, tabs_count
@@ -1306,7 +1355,7 @@ def apply_to_jobs(search_terms: list[str] | None = None, saved_jobs_mode: bool =
             if save_jobs_only:
                 print_lg(f'\n>>>> Bookmarking jobs for "{searchTerm}" (no apply) <<<<\n\n')
             else:
-                print_lg(f'\n>>>> STEP 2: Searching and applying — "{searchTerm}" <<<<\n\n')
+                print_lg(f'\n>>>> Searching and applying — "{searchTerm}" <<<<\n\n')
             apply_filters()
             buffer(3)
             active_listing_xpath = wait_for_job_listings(12)
@@ -1602,12 +1651,23 @@ def apply_to_jobs(search_terms: list[str] | None = None, saved_jobs_mode: bool =
                             discard_job()
                             continue
                     else:
-                        # Case 2: Apply externally
-                        skip, application_link, tabs_count = external_apply(pagination_element, job_id, job_link, resume, date_listed, application_link, screenshot_name)
+                        if not apply_external_jobs:
+                            print_lg(f'Skipping "{title} | {company}" — not Easy Apply (external apply disabled). Job ID: {job_id}!')
+                            skip_count += 1
+                            continue
+                        print_lg(f'External Apply job — opening and filling form for "{title} | {company}". Job ID: {job_id}')
+                        skip, application_link, tabs_count = external_apply(
+                            pagination_element, job_id, job_link, resume, date_listed, application_link, screenshot_name,
+                            work_location, description if description != "Unknown" else None,
+                        )
                         if dailyEasyApplyLimitReached:
                             print_lg("\n###############  Daily application limit for Easy Apply is reached!  ###############\n")
                             return
                         if skip: continue
+                        if application_link == "External Applied":
+                            date_applied = datetime.now()
+                        else:
+                            date_applied = "Pending manual submit"
 
                     submitted_jobs(job_id, title, company, work_location, work_style, description, experience_required, skills, hr_name, hr_link, resume, reposted, date_listed, date_applied, job_link, application_link, questions_list, connect_request)
 
@@ -1652,7 +1712,14 @@ def run(total_runs: int) -> int:
     if save_jobs_only:
         print_lg("Mode: Save only (bookmark matching jobs without applying)")
     else:
-        print_lg("Daily workflow: (1) Apply Saved jobs  ->  (2) Search new jobs with your filters")
+        modes = []
+        if not easy_apply_only:
+            modes.append("Easy Apply + external Apply jobs in search")
+        else:
+            modes.append("Easy Apply jobs only in search")
+        if apply_external_jobs:
+            modes.append("external tabs left open for manual submit")
+        print_lg("Mode: " + "; ".join(modes))
     print_lg(f"Currently looking for jobs posted within '{date_posted}' and sorting them by '{sort_by}'")
     if apply_saved_jobs_first and not save_jobs_only and not dailyEasyApplyLimitReached:
         apply_to_jobs(saved_jobs_mode=True)
@@ -1680,6 +1747,8 @@ def main() -> None:
         print_lg("Save-only mode is ON — jobs that pass your filters will be bookmarked on LinkedIn, not applied to.")
     elif apply_saved_jobs_first:
         print_lg("Daily mode: first apply to your LinkedIn Saved jobs, then search and apply to new jobs matching your filters.")
+    else:
+        print_lg("Skipping Saved jobs — searching and applying to new jobs only.")
     total_runs = 1
     try:
         global linkedIn_tab, tabs_count, useNewResume, aiClient

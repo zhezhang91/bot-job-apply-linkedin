@@ -128,6 +128,11 @@ def validate_search() -> None | ValueError | TypeError:
     check_string(salary, "salary")
 
     check_boolean(easy_apply_only, "easy_apply_only")
+    check_boolean(apply_external_jobs, "apply_external_jobs")
+    check_boolean(fill_external_application_forms, "fill_external_application_forms")
+    check_boolean(external_auto_submit, "external_auto_submit")
+    check_boolean(keep_external_apply_tabs_open, "keep_external_apply_tabs_open")
+    check_int(external_apply_max_steps, "external_apply_max_steps", 1)
 
     check_list(experience_level, "experience_level", ["Internship", "Entry level", "Associate", "Mid-Senior level", "Director", "Executive"])
     check_list(job_type, "job_type", ["Full-time", "Part-time", "Contract", "Temporary", "Volunteer", "Internship", "Other"])

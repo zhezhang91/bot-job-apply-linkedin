@@ -38,32 +38,21 @@ search_terms = [
 ]
 
 # Job title must contain at least one of these phrases (case-insensitive). Leave empty [] to disable.
-allowed_job_title_keywords = [
-    "software engineer", "software developer", "web developer", "full stack", "fullstack",
-    "frontend", "front end", "front-end", "backend", "back end", "back-end",
-    "application developer", "platform engineer", "javascript", "react developer",
-    "node developer", "node.js", "python developer", "java developer",
-    "développeur", "developpeur", "ingénieur logiciel", "ingenieur logiciel",
-    "software specialist", "technology lead", "tech lead",
-]
+allowed_job_title_keywords = []    # Disabled — rely on search_terms instead (broader matching)
 
 # Skip jobs whose title contains any of these phrases (case-insensitive).
 blocked_job_title_keywords = [
-    "intern", "internship", "co-op", "co op", "director", "vice president", " vp ",
-    "head of", "chief ", "recruiter", "talent acquisition", "sales engineer",
-    "quality assurance", "qa lead", "qa manager", "devops", "sre ", "site reliability",
-    "data scientist", "machine learning", "ml engineer", "embedded", "firmware",
-    "mobile ios", "mobile android", "c++", "golang lead",
+    "intern", "internship", "co-op", "co op",
+    "recruiter", "talent acquisition",
 ]
 
 # Skip companies whose name contains these words (case-insensitive). Helps filter staffing agencies.
 blocked_company_name_keywords = [
-    "staffing", "recruiting", "recruitment", "talent", "headhunt", "manpower",
-    "consulting group", "workforce", "employment agency", "hiring solutions",
+    "staffing agency", "employment agency", "headhunt", "manpower",
 ]
 
 # Only apply to companies with at least this many employees. Set to 0 to disable.
-min_company_size = 200
+min_company_size = 0
 
 # Skip companies larger than this many employees. Set to 0 for no upper limit.
 max_company_size = 0
@@ -77,9 +66,9 @@ search_location = ""               # Some valid examples: "", "United States", "
 # After how many number of applications in current search should the bot switch to next search? 
 switch_number = 30                 # Only numbers greater than 0... Don't put in quotes
 
-# Daily workflow: (1) apply Saved jobs first, (2) then search new jobs with filters below.
-apply_saved_jobs_first = True      # True or False, Note: True or False are case-sensitive
-search_new_jobs_after_saved = True # After Saved jobs, run keyword searches with your filters. False = Saved jobs only.
+# Set False to skip Saved jobs and go straight to keyword search + apply.
+apply_saved_jobs_first = False     # True or False, Note: True or False are case-sensitive
+search_new_jobs_after_saved = True # Run keyword searches with your filters.
 saved_jobs_url = "https://www.linkedin.com/jobs/collections/saved/"   # LinkedIn Saved jobs (Jobs > My jobs > Saved)
 saved_jobs_limit = 0               # Max saved jobs to apply per run. 0 = apply to all saved jobs.
 relax_filters_for_saved_jobs = True  # True = skip title/location/company-size/date filters for jobs you saved manually
@@ -108,13 +97,21 @@ This is below format: QUESTION = VALID_ANSWER
 sort_by = "Most recent"                       # "Most recent", "Most relevant" or ("" to not select) 
 date_posted = "Past month"         # LinkedIn filter: "Any time", "Past month", "Past week", "Past 24 hours" or ("" to not select)
 
-# Skip jobs posted more than this many days ago. Set to 0 to disable. LinkedIn has no "Past 2 weeks" filter, so use date_posted = "Past month" plus this setting.
-max_days_since_posted = 14
+# Skip jobs posted more than this many days ago. Set to 0 to disable.
+max_days_since_posted = 0
 salary = ""                        # "$40,000+", "$60,000+", "$80,000+", "$100,000+", "$120,000+", "$140,000+", "$160,000+", "$180,000+", "$200,000+"
 
-easy_apply_only = True             # True or False, Note: True or False are case-sensitive
+# LinkedIn search filter: True = only show Easy Apply jobs in search results.
+easy_apply_only = False            # False = also include jobs that apply on company websites
 
-experience_level = ["Mid-Senior level"]              # (multiple select) "Internship", "Entry level", "Associate", "Mid-Senior level", "Director", "Executive"
+# External apply: fill company-site forms; leave the tab open for you to submit manually.
+apply_external_jobs = True         # True or False, Note: True or False are case-sensitive
+fill_external_application_forms = True   # Auto-fill fields on external sites
+external_auto_submit = False       # False = never click Submit; you finish and submit in the open tab
+keep_external_apply_tabs_open = True     # Always leave external apply tabs open (recommended)
+external_apply_max_steps = 20      # Max Next/Continue clicks per external application (Submit excluded when external_auto_submit = False)
+
+experience_level = ["Entry level", "Associate", "Mid-Senior level"]
 job_type = ["Full-time"]                      # (multiple select) "Full-time", "Part-time", "Contract", "Temporary", "Volunteer", "Internship", "Other"
 on_site = ["Remote", "On-site", "Hybrid"]                       # (multiple select) "On-site", "Remote", "Hybrid"
 
@@ -129,7 +126,7 @@ location = [
 ]
 
 # Skip jobs whose listed location does not contain any of these words (case-insensitive). Leave empty [] to disable.
-allowed_locations = ["Ottawa", "Toronto", "Vancouver"]
+allowed_locations = ["Canada", "Ottawa", "Toronto", "Vancouver", "Ontario", "British Columbia"]
 
 # Nearby cities / metro areas that also count as allowed (GTA, Vancouver metro, Ottawa area).
 allowed_metro_locations = [
@@ -137,6 +134,8 @@ allowed_metro_locations = [
     "Richmond Hill", "Oakville", "Ajax", "Pickering", "Vaughan", "Milton", "Halton Hills",
     "Greater Toronto", "GTA", "Burnaby", "Surrey", "Richmond", "Coquitlam", "New Westminster",
     "North Vancouver", "West Vancouver", "Delta", "Langley", "Kanata", "Nepean", "Orleans",
+    "Kitchener", "Waterloo", "Hamilton", "London", "Calgary", "Edmonton", "Victoria",
+    "Winnipeg", "Halifax", "Gatineau", "Cambridge", "Barrie", "Guelph", "St. Catharines",
 ]
 
 # Allow remote/hybrid jobs listed as "Canada" if they are not in a blocked province/city.
@@ -168,22 +167,19 @@ pause_after_filters = False         # True or False, Note: True or False are cas
 ## >>>>>>>>>>> SKIP IRRELEVANT JOBS <<<<<<<<<<<
  
 # Avoid applying to these companies, and companies with these bad words in their 'About Company' section...
-about_company_bad_words = ["Crossover", "Staffing", "Recruiting", "Recruitment", "Talent Solutions", "Employment Agency", "Headhunting"]       # (dynamic multiple search) or leave empty as []. Ex: ["Staffing", "Recruiting", "Name of Company you don't want to apply to"]
+about_company_bad_words = ["Crossover"]       # (dynamic multiple search) or leave empty as [].
 
-# Skip checking for `about_company_bad_words` for these companies if they have these good words in their 'About Company' section... [Exceptions, For example, I want to apply to "Robert Half" although it's a staffing company]
-about_company_good_words = []      # (dynamic multiple search) or leave empty as []. Ex: ["Robert Half", "Dice"]
+about_company_good_words = []      # (dynamic multiple search) or leave empty as [].
 
-# Avoid applying to these companies if they have these bad words in their 'Job Description' section...  (In development)
-bad_words = ["US Citizen","USA Citizen","No C2C", "No Corp2Corp", "Embedded Programming", "PHP", "Ruby", "CNC"]                     # (dynamic multiple search) or leave empty as []. Case Insensitive. Ex: ["word_1", "phrase 1", "word word", "polygraph", "US Citizenship", "Security Clearance"]
+# Avoid applying to these companies if they have these bad words in their 'Job Description' section...
+bad_words = ["US Citizen", "USA Citizen", "No C2C", "No Corp2Corp", "must be a u.s. citizen"]                     # Case Insensitive.
 
-# Do you have an active Security Clearance? (True for Yes and False for No)
 security_clearance = False         # True or False, Note: True or False are case-sensitive
 
-# Do you have a Masters degree? (True for Yes and False for No). If True, the tool will apply to jobs containing the word 'master' in their job description and if it's experience required <= current_experience + 2 and current_experience is not set as -1. 
 did_masters = True                 # True or False, Note: True or False are case-sensitive
 
-# Avoid applying to jobs if their required experience is above your current_experience. (Set value as -1 if you want to apply to all ignoring their required experience...)
-current_experience = 6             # Integers > -2 (Ex: -1, 0, 1, 2, 3, 4...)
+# -1 = apply regardless of years of experience listed in the job description
+current_experience = -1             # Integers > -2 (Ex: -1, 0, 1, 2, 3, 4...)
 ##
 
 
