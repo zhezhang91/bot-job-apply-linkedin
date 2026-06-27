@@ -36,6 +36,25 @@ MANUAL_APPLY_XPATHS = [
     ".//span[normalize-space(.)='Apply manually']/ancestor::a[1]",
 ]
 
+# Greenhouse / CareerPuck "Start Your Application" modal (inside iframe)
+GREENHOUSE_START_MODAL_XPATHS = (
+    ".//*[contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'start your application')]",
+    ".//*[contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'how would you like to apply')]",
+)
+
+AUTOFILL_RESUME_XPATHS = [
+    ".//button[normalize-space(.)='Autofill with Resume']",
+    ".//button[contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'autofill with resume')]",
+    ".//a[contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'autofill with resume')]",
+]
+
+APPLY_MANUALLY_MODAL_XPATHS = [
+    ".//button[normalize-space(.)='Apply Manually']",
+    ".//a[normalize-space(.)='Apply Manually']",
+    ".//button[normalize-space(.)='Apply manually']",
+    ".//a[normalize-space(.)='Apply manually']",
+] + MANUAL_APPLY_XPATHS
+
 # Workday / Greenhouse / Phenom — start application from job posting page
 LANDING_APPLY_XPATHS = [
     "//button[@data-automation-id='jobPostingApplyButton']",
@@ -1002,6 +1021,52 @@ def _dismiss_cookie_banners(driver: WebDriver) -> None:
     accept_cookies_if_present(driver)
 
 
+def _application_start_modal_visible(driver: WebDriver) -> bool:
+    try:
+        for xpath in GREENHOUSE_START_MODAL_XPATHS:
+            for el in driver.find_elements(By.XPATH, xpath):
+                if el.is_displayed():
+                    return True
+        body = (driver.find_element(By.TAG_NAME, 'body').text or '').lower()
+        if 'start your application' in body and 'apply manually' in body:
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def _handle_application_start_modal(driver: WebDriver) -> bool:
+    '''
+    Greenhouse embed shows "Start Your Application" with Apply Manually / Autofill with Resume.
+    Must click through before the real form appears.
+    '''
+    modal_visible = _application_start_modal_visible(driver)
+    apply_btn_visible = False
+    try:
+        for xpath in APPLY_MANUALLY_MODAL_XPATHS[:4]:
+            for el in driver.find_elements(By.XPATH, xpath):
+                if el.is_displayed():
+                    apply_btn_visible = True
+                    break
+            if apply_btn_visible:
+                break
+    except Exception:
+        pass
+
+    if not modal_visible and not apply_btn_visible:
+        return False
+
+    if _click_button(driver, APPLY_MANUALLY_MODAL_XPATHS):
+        print_lg('Clicked "Apply Manually" on Start Your Application modal.')
+        buffer(2)
+        return True
+    if _click_button(driver, AUTOFILL_RESUME_XPATHS):
+        print_lg('Clicked "Autofill with Resume" on Start Your Application modal.')
+        buffer(2)
+        return True
+    return False
+
+
 def click_apply_manually_if_present(driver: WebDriver, linkedin_only: bool = True) -> bool:
     '''Only use on LinkedIn apply dialogs — not on company career sites.'''
     if linkedin_only and 'linkedin.com' not in (driver.current_url or '').lower():
@@ -1088,11 +1153,15 @@ def _start_application_in_frame(driver: WebDriver) -> bool:
     if _has_visible_form_fields(driver):
         return False
     _dismiss_cookie_banners(driver)
+    if _handle_application_start_modal(driver):
+        return True
     if _click_button(driver, LANDING_APPLY_XPATHS):
         print_lg('Clicked Apply inside application iframe.')
         buffer(2)
+        if _handle_application_start_modal(driver):
+            return True
         return True
-    return False
+    return _handle_application_start_modal(driver)
 
 
 def _focus_application_context(driver: WebDriver) -> bool:
@@ -1104,7 +1173,12 @@ def _focus_application_context(driver: WebDriver) -> bool:
     except Exception:
         pass
     if _switch_to_application_frame(driver, quiet=True):
-        return _has_visible_form_fields(driver)
+        if _handle_application_start_modal(driver):
+            buffer(1)
+        if _has_visible_form_fields(driver):
+            return True
+    if _handle_application_start_modal(driver):
+        buffer(1)
     return _has_visible_form_fields(driver)
 
 
@@ -1127,6 +1201,7 @@ def _ensure_application_form_open(driver: WebDriver) -> bool:
 
     if _switch_to_application_frame(driver):
         _start_application_in_frame(driver)
+        _handle_application_start_modal(driver)
         buffer(1)
 
     if _wait_for_form_fields(driver, 10):
@@ -1141,6 +1216,7 @@ def _ensure_application_form_open(driver: WebDriver) -> bool:
     buffer(2)
     if _switch_to_application_frame(driver, quiet=True):
         _start_application_in_frame(driver)
+        _handle_application_start_modal(driver)
     if _wait_for_form_fields(driver, 8):
         _session_form_opened = True
         return True
