@@ -67,7 +67,7 @@ search_location = ""               # Some valid examples: "", "United States", "
 switch_number = 30                 # Only numbers greater than 0... Don't put in quotes
 
 # Set False to skip Saved jobs and go straight to keyword search + apply.
-apply_saved_jobs_first = True      # True or False, Note: True or False are case-sensitive
+apply_saved_jobs_first = False     # True or False, Note: True or False are case-sensitive
 search_new_jobs_after_saved = True # Run keyword searches with your filters.
 saved_jobs_url = "https://www.linkedin.com/jobs/collections/saved/"   # LinkedIn Saved jobs (Jobs > My jobs > Saved)
 saved_jobs_limit = 0               # Max saved jobs to apply per run. 0 = apply to all saved jobs.
